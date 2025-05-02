@@ -44,7 +44,7 @@ jobs:
       - name: Install Xcode command-line tools
         if: steps.check.outputs.has_new_commit == 'true' || github.event_name == 'workflow_dispatch'
         run: |
-          sudo xcode-select --install || true
+          xcode-select --install || true
 
       - name: Set up Homebrew
         if: steps.check.outputs.has_new_commit == 'true' || github.event_name == 'workflow_dispatch'
