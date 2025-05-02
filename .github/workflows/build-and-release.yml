@@ -1,4 +1,4 @@
-name: Build and Release Telegram Bot API for macOS
+name: Build and Release Telegram Bot API for macOS (Native)
 
 on:
   schedule:
@@ -25,12 +25,10 @@ jobs:
           LAST_COMMIT=$(cat .last_commit 2>/dev/null || echo "none")
           echo "Last known commit: $LAST_COMMIT"
           if [ "$LAST_COMMIT" != "$UPSTREAM_COMMIT" ]; then
-            echo "New upstream commit detected"
             echo "has_new_commit=true" >> $GITHUB_OUTPUT
             echo "commit_sha=$UPSTREAM_COMMIT" >> $GITHUB_OUTPUT
             echo "$UPSTREAM_COMMIT" > .last_commit
           else
-            echo "No new upstream commit"
             echo "has_new_commit=false" >> $GITHUB_OUTPUT
           fi
 
@@ -99,7 +97,6 @@ jobs:
   release:
     needs: build
     runs-on: ubuntu-latest
-    if: steps.check.outputs.has_new_commit == 'true' || github.event_name == 'workflow_dispatch'
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4

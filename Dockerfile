@@ -9,8 +9,8 @@ RUN apt-get update && apt-get install -y \
     gperf \
     wget \
     perl \
-    build-essential \
     curl \
+    build-essential \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Homebrew
@@ -31,15 +31,11 @@ RUN eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)" \
     && rm -rf build \
     && mkdir build \
     && cd build \
-    && if [ "$ARCH" = "arm64" ]; then \
-         OPENSSL_DIR="/home/linuxbrew/.linuxbrew/opt/openssl@3"; \
-         BINARY_NAME="telegram-bot-api-arm64"; \
-       else \
-         OPENSSL_DIR="/home/linuxbrew/.linuxbrew/opt/openssl@3"; \
-         BINARY_NAME="telegram-bot-api-x86_64"; \
-       fi \
+    && OPENSSL_DIR="/home/linuxbrew/.linuxbrew/opt/openssl@3" \
+    && BINARY_NAME="telegram-bot-api-${ARCH}" \
     && cmake -DCMAKE_BUILD_TYPE=Release -DOPENSSL_ROOT_DIR=$OPENSSL_DIR -DCMAKE_INSTALL_PREFIX:PATH=.. .. \
     && cmake --build . --target install \
     && cd ../.. \
     && mv telegram-bot-api/bin/telegram-bot-api telegram-bot-api/bin/$BINARY_NAME \
-    && ls -l telegram-bot-api/bin/$BINARY_NAME
+    && ls -l telegram-bot-api/bin/$BINARY_NAME \
+    && file telegram-bot-api/bin/$BINARY_NAME
