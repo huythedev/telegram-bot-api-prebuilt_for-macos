@@ -11,12 +11,22 @@ RUN apt-get update && apt-get install -y \
     perl \
     curl \
     build-essential \
+    sudo \
     && rm -rf /var/lib/apt/lists/*
+
+# Create a non-root user for Homebrew
+RUN useradd -m -s /bin/bash brewuser \
+    && echo "brewuser ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers.d/brewuser \
+    && chmod 0440 /etc/sudoers.d/brewuser
+
+# Switch to brewuser
+USER brewuser
+WORKDIR /home/brewuser
 
 # Install Homebrew
 ENV NONINTERACTIVE=1
 RUN /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)" \
-    && echo 'eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"' >> /root/.bashrc
+    && echo 'eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"' >> /home/brewuser/.bashrc
 
 # Install Homebrew dependencies
 RUN eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)" \
@@ -26,8 +36,8 @@ RUN eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)" \
 ARG TELEGRAM_API_REF=master
 ARG ARCH=arm64
 RUN eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)" \
-    && git clone --recursive https://github.com/tdlib/telegram-bot-api.git /telegram-bot-api \
-    && cd /telegram-bot-api \
+    && git clone --recursive https://github.com/tdlib/telegram-bot-api.git /home/brewuser/telegram-bot-api \
+    && cd /home/brewuser/telegram-bot-api \
     && git checkout ${TELEGRAM_API_REF} \
     && rm -rf build \
     && mkdir build \
@@ -40,3 +50,9 @@ RUN eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)" \
     && mv telegram-bot-api/bin/telegram-bot-api telegram-bot-api/bin/$BINARY_NAME \
     && ls -l telegram-bot-api/bin/$BINARY_NAME \
     && file telegram-bot-api/bin/$BINARY_NAME
+
+# Copy binary to a shared location
+USER root
+RUN mkdir -p /artifacts \
+    && cp /home/brewuser/telegram-bot-api/bin/telegram-bot-api-${ARCH} /artifacts/ \
+    && chmod -R 777 /artifacts

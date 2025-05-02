@@ -55,7 +55,7 @@ jobs:
             --build-arg ARCH=${{ matrix.arch }} \
             -f Dockerfile .
           docker create --name temp-container telegram-bot-api-macos-${{ matrix.arch }}
-          docker cp temp-container:/telegram-bot-api/bin/telegram-bot-api-${{ matrix.arch }} .
+          docker cp temp-container:/artifacts/telegram-bot-api-${{ matrix.arch }} .
           docker rm temp-container
 
       - name: Verify binary
@@ -96,11 +96,11 @@ jobs:
           tag_name: latest
           name: Latest telegram-bot-api for macOS (Docker)
           body: |
-            telegram-bot-api binaries built in Docker (may not be macOS-compatible).
+            telegram-bot-api binaries built in Docker (Linux ELF, not macOS-compatible).
             Built from commit: ${{ steps.check.outputs.commit_sha || 'master' }}
-            - telegram-bot-api-arm64: For Apple Silicon (M1/M2, experimental)
-            - telegram-bot-api-x86_64: For Intel Macs (experimental)
-            Note: For true macOS binaries, use the native macOS workflow.
+            - telegram-bot-api-arm64: Experimental (Linux)
+            - telegram-bot-api-x86_64: Experimental (Linux)
+            Note: For macOS binaries, use the native workflow (build-and-release-native.yml).
           files: |
             binaries/telegram-bot-api-arm64
             binaries/telegram-bot-api-x86_64
