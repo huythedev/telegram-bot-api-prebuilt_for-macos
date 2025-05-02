@@ -1,6 +1,6 @@
 FROM ubuntu:22.04
 
-# Install basic dependencies
+# Install dependencies
 RUN apt-get update && apt-get install -y \
     clang \
     cmake \
@@ -14,6 +14,7 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Homebrew
+ENV NONINTERACTIVE=1
 RUN /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)" \
     && echo 'eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"' >> /root/.bashrc
 

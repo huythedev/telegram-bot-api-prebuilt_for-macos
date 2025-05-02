@@ -1,4 +1,4 @@
-name: Build and Release Telegram Bot API for macOS (Native)
+name: Build and Release Telegram Bot API for macOS (Docker)
 
 on:
   schedule:
@@ -9,13 +9,15 @@ on:
 
 jobs:
   build:
-    runs-on: macos-latest
+    runs-on: ubuntu-latest
     strategy:
       matrix:
         arch: [arm64, x86_64]
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          persist-credentials: true # Ensure GITHUB_TOKEN for push
 
       - name: Check for upstream updates
         id: check
@@ -41,58 +43,33 @@ jobs:
           git commit -m "Update last known upstream commit"
           git push
 
-      - name: Install Xcode command-line tools
+      - name: Set up Docker Buildx
         if: steps.check.outputs.has_new_commit == 'true' || github.event_name == 'workflow_dispatch'
-        run: |
-          xcode-select --install || true
+        uses: docker/setup-buildx-action@v3
 
-      - name: Set up Homebrew
+      - name: Build telegram-bot-api
         if: steps.check.outputs.has_new_commit == 'true' || github.event_name == 'workflow_dispatch'
         run: |
-          /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-          echo "/opt/homebrew/bin:/usr/local/bin" >> $GITHUB_PATH
+          docker build -t telegram-bot-api-macos-${{ matrix.arch }} \
+            --build-arg TELEGRAM_API_REF=${{ steps.check.outputs.commit_sha || 'master' }} \
+            --build-arg ARCH=${{ matrix.arch }} \
+            -f Dockerfile .
+          docker create --name temp-container telegram-bot-api-macos-${{ matrix.arch }}
+          docker cp temp-container:/telegram-bot-api/bin/telegram-bot-api-${{ matrix.arch }} .
+          docker rm temp-container
 
-      - name: Install dependencies
+      - name: Verify binary
         if: steps.check.outputs.has_new_commit == 'true' || github.event_name == 'workflow_dispatch'
         run: |
-          brew install gperf cmake openssl@3
-
-      - name: Clone and build telegram-bot-api
-        if: steps.check.outputs.has_new_commit == 'true' || github.event_name == 'workflow_dispatch'
-        env:
-          ARCH: ${{ matrix.arch }}
-        run: |
-          if [ "$ARCH" = "arm64" ]; then
-            OPENSSL_DIR="/opt/homebrew/opt/openssl@3"
-            BINARY_NAME="telegram-bot-api-arm64"
-          else
-            OPENSSL_DIR="/usr/local/opt/openssl@3"
-            BINARY_NAME="telegram-bot-api-x86_64"
-          fi
-          git clone --recursive https://github.com/tdlib/telegram-bot-api.git
-          cd telegram-bot-api
-          git checkout ${{ steps.check.outputs.commit_sha || 'master' }}
-          rm -rf build
-          mkdir build
-          cd build
-          if [ "$ARCH" = "x86_64" ]; then
-            arch -x86_64 cmake -DCMAKE_BUILD_TYPE=Release -DOPENSSL_ROOT_DIR=$OPENSSL_DIR -DCMAKE_INSTALL_PREFIX:PATH=.. ..
-            arch -x86_64 cmake --build . --target install
-          else
-            cmake -DCMAKE_BUILD_TYPE=Release -DOPENSSL_ROOT_DIR=$OPENSSL_DIR -DCMAKE_INSTALL_PREFIX:PATH=.. ..
-            cmake --build . --target install
-          fi
-          cd ../..
-          mv telegram-bot-api/bin/telegram-bot-api telegram-bot-api/bin/$BINARY_NAME
-          ls -l telegram-bot-api/bin/$BINARY_NAME
-          file telegram-bot-api/bin/$BINARY_NAME
+          ls -l telegram-bot-api-${{ matrix.arch }}
+          file telegram-bot-api-${{ matrix.arch }}
 
       - name: Upload binary as artifact
         if: steps.check.outputs.has_new_commit == 'true' || github.event_name == 'workflow_dispatch'
         uses: actions/upload-artifact@v4
         with:
           name: telegram-bot-api-${{ matrix.arch }}
-          path: telegram-bot-api/bin/telegram-bot-api-${{ matrix.arch }}
+          path: telegram-bot-api-${{ matrix.arch }}
 
   release:
     needs: build
@@ -117,16 +94,17 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: latest
-          name: Latest telegram-bot-api for macOS
+          name: Latest telegram-bot-api for macOS (Docker)
           body: |
-            telegram-bot-api binaries for macOS (Apple Silicon and Intel).
+            telegram-bot-api binaries built in Docker (may not be macOS-compatible).
             Built from commit: ${{ steps.check.outputs.commit_sha || 'master' }}
-            - telegram-bot-api-arm64: For Apple Silicon (M1/M2)
-            - telegram-bot-api-x86_64: For Intel Macs
+            - telegram-bot-api-arm64: For Apple Silicon (M1/M2, experimental)
+            - telegram-bot-api-x86_64: For Intel Macs (experimental)
+            Note: For true macOS binaries, use the native macOS workflow.
           files: |
             binaries/telegram-bot-api-arm64
             binaries/telegram-bot-api-x86_64
-          prerelease: false
+          prerelease: true
           draft: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -134,4 +112,4 @@ jobs:
       - name: Notify on success
         if: success()
         run: |
-          echo "Successfully built and released telegram-bot-api binaries for macOS"
+          echo "Built and released telegram-bot-api binaries (Docker, experimental)"
