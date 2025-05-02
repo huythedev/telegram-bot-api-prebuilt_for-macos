@@ -30,7 +30,7 @@ RUN /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/instal
 
 # Install Homebrew dependencies
 RUN eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)" \
-    && brew install gperf cmake openssl@3
+    && brew install gperf cmake openssl@3 zlib
 
 # Build telegram-bot-api
 ARG TELEGRAM_API_REF=master
@@ -43,8 +43,12 @@ RUN eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)" \
     && mkdir build \
     && cd build \
     && OPENSSL_DIR="/home/linuxbrew/.linuxbrew/opt/openssl@3" \
+    && ZLIB_DIR="/home/linuxbrew/.linuxbrew/opt/zlib" \
     && BINARY_NAME="telegram-bot-api-${ARCH}" \
-    && cmake -DCMAKE_BUILD_TYPE=Release -DOPENSSL_ROOT_DIR=$OPENSSL_DIR -DCMAKE_INSTALL_PREFIX:PATH=.. .. \
+    && cmake -DCMAKE_BUILD_TYPE=Release \
+             -DOPENSSL_ROOT_DIR=$OPENSSL_DIR \
+             -DZLIB_ROOT=$ZLIB_DIR \
+             -DCMAKE_INSTALL_PREFIX:PATH=.. .. \
     && cmake --build . --target install \
     && cd ../.. \
     && mv telegram-bot-api/bin/telegram-bot-api telegram-bot-api/bin/$BINARY_NAME \
