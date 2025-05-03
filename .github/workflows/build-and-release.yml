@@ -4,8 +4,6 @@ on:
   schedule:
     - cron: '0 0 * * *' # Run daily at 00:00 UTC
   workflow_dispatch: # Allow manual trigger
-  repository_dispatch:
-    types: [upstream_update] # Trigger on upstream updates
 
 jobs:
   build:
@@ -13,77 +11,59 @@ jobs:
     strategy:
       matrix:
         arch: [arm64, x86_64]
+    outputs:
+      commit_sha: ${{ steps.build_api.outputs.current_commit }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-        with:
-          persist-credentials: true # Ensure GITHUB_TOKEN for push
-
-      - name: Check for upstream updates
-        id: check
-        run: |
-          UPSTREAM_COMMIT=$(curl -s https://api.github.com/repos/tdlib/telegram-bot-api/commits/master | jq -r .sha)
-          echo "Latest upstream commit: $UPSTREAM_COMMIT"
-          LAST_COMMIT=$(cat .last_commit 2>/dev/null || echo "none")
-          echo "Last known commit: $LAST_COMMIT"
-          if [ "$LAST_COMMIT" != "$UPSTREAM_COMMIT" ]; then
-            echo "has_new_commit=true" >> $GITHUB_OUTPUT
-            echo "commit_sha=$UPSTREAM_COMMIT" >> $GITHUB_OUTPUT
-            echo "$UPSTREAM_COMMIT" > .last_commit
-          else
-            echo "has_new_commit=false" >> $GITHUB_OUTPUT
-          fi
-
-      - name: Commit last commit hash
-        if: steps.check.outputs.has_new_commit == 'true'
-        run: |
-          git config user.name "GitHub Action"
-          git config user.email "action@github.com"
-          git add .last_commit
-          git commit -m "Update last known upstream commit"
-          git push
 
       - name: Prepare Homebrew directories
-        if: steps.check.outputs.has_new_commit == 'true' || github.event_name == 'workflow_dispatch'
         run: |
           mkdir -p /opt/homebrew
           mkdir -p /usr/local
           chmod -R u+w /opt/homebrew /usr/local
 
       - name: Install Homebrew (arm64)
-        if: steps.check.outputs.has_new_commit == 'true' || github.event_name == 'workflow_dispatch'
         env:
           HOMEBREW_NO_INSTALL_CLEANUP: 1
           NONINTERACTIVE: 1
         run: |
-          /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+          if ! command -v /opt/homebrew/bin/brew &> /dev/null; then
+            /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+          else
+            echo "Homebrew (arm64) already installed."
+          fi
           echo "/opt/homebrew/bin:/opt/homebrew/sbin" >> $GITHUB_PATH
           eval "$(/opt/homebrew/bin/brew shellenv)"
 
       - name: Install Homebrew (x86_64)
-        if: (steps.check.outputs.has_new_commit == 'true' || github.event_name == 'workflow_dispatch') && matrix.arch == 'x86_64'
+        if: matrix.arch == 'x86_64'
         env:
           HOMEBREW_NO_INSTALL_CLEANUP: 1
           NONINTERACTIVE: 1
         run: |
-          arch -x86_64 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+          if ! command -v /usr/local/bin/brew &> /dev/null; then
+            arch -x86_64 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+          else
+            echo "Homebrew (x86_64) already installed."
+          fi
           echo "/usr/local/bin:/usr/local/sbin" >> $GITHUB_PATH
           eval "$(/usr/local/bin/brew shellenv)"
 
       - name: Install dependencies (arm64)
-        if: (steps.check.outputs.has_new_commit == 'true' || github.event_name == 'workflow_dispatch') && matrix.arch == 'arm64'
+        if: matrix.arch == 'arm64'
         run: |
           eval "$(/opt/homebrew/bin/brew shellenv)"
           brew install gperf cmake openssl@3 zlib
 
       - name: Install dependencies (x86_64)
-        if: (steps.check.outputs.has_new_commit == 'true' || github.event_name == 'workflow_dispatch') && matrix.arch == 'x86_64'
+        if: matrix.arch == 'x86_64'
         run: |
           eval "$(/usr/local/bin/brew shellenv)"
           arch -x86_64 brew install gperf cmake openssl@3 zlib
 
       - name: Clone and build telegram-bot-api
-        if: steps.check.outputs.has_new_commit == 'true' || github.event_name == 'workflow_dispatch'
+        id: build_api
         env:
           ARCH: ${{ matrix.arch }}
         run: |
@@ -96,9 +76,17 @@ jobs:
           fi
           OPENSSL_DIR="$BREW_PREFIX/opt/openssl@3"
           ZLIB_DIR="$BREW_PREFIX/opt/zlib"
+
           git clone --recursive https://github.com/tdlib/telegram-bot-api.git
           cd telegram-bot-api
-          git checkout ${{ steps.check.outputs.commit_sha || 'master' }}
+          git checkout master
+          git pull
+          git submodule update --init --recursive
+
+          CURRENT_COMMIT=$(git rev-parse HEAD)
+          echo "Building from commit: $CURRENT_COMMIT"
+          echo "current_commit=$CURRENT_COMMIT" >> $GITHUB_OUTPUT
+
           rm -rf build
           mkdir build
           cd build
@@ -130,7 +118,6 @@ jobs:
           otool -L telegram-bot-api/bin/$BINARY_NAME
 
       - name: Upload binary as artifact
-        if: steps.check.outputs.has_new_commit == 'true' || github.event_name == 'workflow_dispatch'
         uses: actions/upload-artifact@v4
         with:
           name: telegram-bot-api-${{ matrix.arch }}
@@ -151,8 +138,12 @@ jobs:
       - name: Prepare binaries
         run: |
           mkdir -p binaries
-          mv artifacts/telegram-bot-api-arm64/telegram-bot-api-arm64 binaries/
-          mv artifacts/telegram-bot-api-x86_64/telegram-bot-api-x86_64 binaries/
+          find artifacts/telegram-bot-api-arm64 -name 'telegram-bot-api-arm64' -exec mv {} binaries/ \; || echo "ARM64 binary artifact not found or move failed."
+          find artifacts/telegram-bot-api-x86_64 -name 'telegram-bot-api-x86_64' -exec mv {} binaries/ \; || echo "x86_64 binary artifact not found or move failed."
+          if [ -z "$(ls -A binaries)" ]; then
+             echo "No binaries found in binaries/ directory. Exiting."
+             exit 1
+          fi
           ls -l binaries/
 
       - name: Generate timestamp tag
@@ -170,13 +161,11 @@ jobs:
           body: |
             Native telegram-bot-api binaries for macOS (Apple Silicon and Intel), statically linked.
 
-            Built from upstream commit: `${{ steps.check.outputs.commit_sha || 'master' }}`
+            Built from upstream commit: `${{ needs.build.outputs.commit_sha }}`
 
             - `telegram-bot-api-arm64`: For Apple Silicon (M1/M2/M3+)
             - `telegram-bot-api-x86_64`: For Intel Macs (also runs via Rosetta 2 on Apple Silicon)
-          files: |
-            binaries/telegram-bot-api-arm64
-            binaries/telegram-bot-api-x86_64
+          files: binaries/*
           prerelease: false
           draft: false
         env:
