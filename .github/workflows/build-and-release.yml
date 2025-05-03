@@ -104,7 +104,7 @@ jobs:
           files: |
             binaries/telegram-bot-api-arm64
             binaries/telegram-bot-api-x86_64
-          prerelease: true
+          prerelease: false
           draft: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
