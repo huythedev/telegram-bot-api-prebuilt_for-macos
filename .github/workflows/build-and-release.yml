@@ -135,16 +135,54 @@ jobs:
         with:
           path: artifacts
 
+      - name: Verify downloaded artifacts
+        run: |
+          echo "Checking for downloaded artifact directories..."
+          ls -l artifacts/
+          if [ ! -d "artifacts/telegram-bot-api-arm64" ]; then
+            echo "Error: Artifact directory 'artifacts/telegram-bot-api-arm64' not found after download."
+            exit 1
+          fi
+          if [ ! -d "artifacts/telegram-bot-api-x86_64" ]; then
+            echo "Error: Artifact directory 'artifacts/telegram-bot-api-x86_64' not found after download."
+            exit 1
+          fi
+          echo "Artifact directories found."
+
       - name: Prepare binaries
         run: |
           mkdir -p binaries
-          find artifacts/telegram-bot-api-arm64 -name 'telegram-bot-api-arm64' -exec mv {} binaries/ \; || echo "ARM64 binary artifact not found or move failed."
-          find artifacts/telegram-bot-api-x86_64 -name 'telegram-bot-api-x86_64' -exec mv {} binaries/ \; || echo "x86_64 binary artifact not found or move failed."
+          echo "Listing downloaded artifacts structure:"
+          ls -lR artifacts
+          echo "---"
+
+          # Define expected paths
+          ARM64_BINARY_PATH="artifacts/telegram-bot-api-arm64/telegram-bot-api-arm64"
+          X86_64_BINARY_PATH="artifacts/telegram-bot-api-x86_64/telegram-bot-api-x86_64"
+
+          # Move binaries, checking if files exist first
+          if [ -f "$ARM64_BINARY_PATH" ]; then
+            mv "$ARM64_BINARY_PATH" binaries/
+            echo "Moved ARM64 binary."
+          else
+            echo "ARM64 binary not found at $ARM64_BINARY_PATH."
+          fi
+
+          if [ -f "$X86_64_BINARY_PATH" ]; then
+            mv "$X86_64_BINARY_PATH" binaries/
+            echo "Moved x86_64 binary."
+          else
+            echo "x86_64 binary not found at $X86_64_BINARY_PATH."
+          fi
+
+          echo "Listing binaries directory contents:"
+          ls -l binaries/
+
+          # Check if the binaries directory is empty
           if [ -z "$(ls -A binaries)" ]; then
-             echo "No binaries found in binaries/ directory. Exiting."
+             echo "No binaries were successfully moved to the binaries/ directory. Exiting."
              exit 1
           fi
-          ls -l binaries/
 
       - name: Generate timestamp tag
         id: timestamp
