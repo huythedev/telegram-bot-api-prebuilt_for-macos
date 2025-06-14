@@ -6,7 +6,47 @@ on:
   workflow_dispatch: # Allow manual trigger
 
 jobs:
+  check-upstream:
+    runs-on: ubuntu-latest
+    outputs:
+      should_build: ${{ steps.check_commit.outputs.should_build }}
+      new_commit: ${{ steps.check_commit.outputs.new_commit }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Check for upstream updates
+        id: check_commit
+        run: |
+          # Fetch the latest commit from tdlib/telegram-bot-api
+          git clone --depth 1 https://github.com/tdlib/telegram-bot-api.git
+          cd telegram-bot-api
+          NEW_COMMIT=$(git rev-parse HEAD)
+          echo "Latest upstream commit: $NEW_COMMIT"
+
+          # Check if last-built-commit.txt exists and read it
+          LAST_COMMIT="none"
+          if [ -f "../last-built-commit.txt" ]; then
+            LAST_COMMIT=$(cat ../last-built-commit.txt)
+            echo "Last built commit: $LAST_COMMIT"
+          else
+            echo "No previous commit file found. Treating as first build."
+          fi
+
+          # Compare commits
+          if [ "$NEW_COMMIT" != "$LAST_COMMIT" ]; then
+            echo "New commit detected. Proceeding with build."
+            echo "should_build=true" >> $GITHUB_OUTPUT
+            echo "new_commit=$NEW_COMMIT" >> $GITHUB_OUTPUT
+          else
+            echo "No new commits. Skipping build."
+            echo "should_build=false" >> $GITHUB_OUTPUT
+            echo "new_commit=$NEW_COMMIT" >> $GITHUB_OUTPUT
+          fi
+
   build:
+    needs: check-upstream
+    if: needs.check-upstream.outputs.should_build == 'true'
     runs-on: macos-latest
     strategy:
       matrix:
@@ -122,6 +162,15 @@ jobs:
         with:
           name: telegram-bot-api-${{ matrix.arch }}
           path: telegram-bot-api/bin/telegram-bot-api-${{ matrix.arch }}
+
+      - name: Save current commit
+        run: |
+          echo "${{ steps.build_api.outputs.current_commit }}" > last-built-commit.txt
+          git config user.name "GitHub Actions Bot"
+          git config user.email "<>"
+          git add last-built-commit.txt
+          git commit -m "Update last-built-commit.txt with commit ${{ steps.build_api.outputs.current_commit }}"
+          git push
 
   release:
     needs: build
