@@ -5,6 +5,13 @@ on:
     - cron: '0 0 * * *' # Run daily at 00:00 UTC
   workflow_dispatch: # Allow manual trigger
 
+permissions:
+  contents: write
+
+concurrency:
+  group: publish-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   check-upstream:
     runs-on: ubuntu-latest
@@ -51,11 +58,14 @@ jobs:
     strategy:
       matrix:
         arch: [arm64, x86_64]
+      fail-fast: false
     outputs:
       commit_sha: ${{ steps.build_api.outputs.current_commit }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # needed for rebase before pushing
 
       - name: Prepare Homebrew directories
         run: |
@@ -163,14 +173,24 @@ jobs:
           name: telegram-bot-api-${{ matrix.arch }}
           path: telegram-bot-api/bin/telegram-bot-api-${{ matrix.arch }}
 
-      - name: Save current commit
+      # ✅ Only one arch updates and pushes last-built-commit.txt to avoid races
+      - name: Save current commit (arm64 only) and push
+        if: matrix.arch == 'arm64'
         run: |
           echo "${{ steps.build_api.outputs.current_commit }}" > last-built-commit.txt
-          git config user.name "GitHub Actions Bot"
-          git config user.email "<>"
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
           git add last-built-commit.txt
-          git commit -m "Update last-built-commit.txt with commit ${{ steps.build_api.outputs.current_commit }}"
-          git push
+          git commit -m "Update last-built-commit.txt with commit ${{ steps.build_api.outputs.current_commit }}" || echo "No changes"
+
+          # Rebase on latest remote to prevent non-fast-forward errors
+          git fetch origin main
+          git pull --rebase origin main || (git rebase --abort && exit 1)
+
+          # Push explicitly to main
+          git push origin HEAD:main
 
   release:
     needs: build
